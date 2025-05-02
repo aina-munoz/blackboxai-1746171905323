@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rummikub Game</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+    }
+    .tile {
+      width: 50px;
+      height: 70px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      user-select: none;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .tile:hover {
+      transform: scale(1.1);
+      z-index: 10;
+    }
+    .tile.red {
+      color: #dc2626; /* Tailwind red-600 */
+    }
+    .tile.blue {
+      color: #2563eb; /* Tailwind blue-600 */
+    }
+    .tile.yellow {
+      color: #ca8a04; /* Tailwind yellow-600 */
+    }
+    .tile.black {
+      color: #000000;
+    }
+    .selected {
+      outline: 3px solid #2563eb;
+      outline-offset: 2px;
+    }
+    .table-area {
+      min-height: 150px;
+      border: 2px dashed #9ca3af; /* Tailwind gray-400 */
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background-color: #f9fafb; /* Tailwind gray-50 */
+    }
+    .player-area {
+      min-height: 100px;
+      border: 2px solid #3b82f6; /* Tailwind blue-500 */
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background-color: #e0e7ff; /* Tailwind indigo-100 */
+    }
+    .ai-area {
+      min-height: 100px;
+      border: 2px solid #ef4444; /* Tailwind red-500 */
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 1rem;
+      background-color: #fee2e2; /* Tailwind red-100 */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: #b91c1c; /* Tailwind red-700 */
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .turn-indicator {
+      margin-top: 1rem;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: #2563eb; /* Tailwind blue-600 */
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+  <h1 class="text-3xl font-bold mb-6 text-gray-800">Rummikub Game</h1>
+
+  <div class="w-full max-w-5xl flex flex-col md:flex-row gap-6">
+    <section class="flex-1">
+      <h2 class="text-xl font-semibold mb-2 text-gray-700">Table</h2>
+      <div id="tableArea" class="table-area" aria-label="Table area for sets and runs" tabindex="0"></div>
+    </section>
+
+    <section class="flex-1">
+      <h2 class="text-xl font-semibold mb-2 text-gray-700">Your Tiles</h2>
+      <div id="playerTiles" class="player-area" aria-label="Player tiles" tabindex="0"></div>
+      <div class="mt-4 flex gap-4">
+        <button id="drawTileBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition" aria-label="Draw a tile">Draw Tile</button>
+        <button id="playTilesBtn" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition" aria-label="Play selected tiles" disabled>Play Selected</button>
+        <button id="resetSelectionBtn" class="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500 transition" aria-label="Reset tile selection" disabled>Reset Selection</button>
+      </div>
+      <div id="turnIndicator" class="turn-indicator mt-4">Your turn</div>
+    </section>
+  </div>
+
+  <div class="w-full max-w-5xl">
+    <div id="aiArea" class="ai-area" aria-label="AI player tiles count" tabindex="0">
+      AI Player Tiles: <span id="aiTileCount">0</span>
+    </div>
+  </div>
+
+</div>
+
+  <script>
+    // Rummikub tile colors and numbers
+    const COLORS = ['red', 'blue', 'yellow', 'black'];
+    const NUMBERS = Array.from({ length: 13 }, (_, i) => i + 1);
+
+    // Tile class
+    class Tile {
+      constructor(color, number, id) {
+        this.color = color;
+        this.number = number;
+        this.id = id; // unique id for each tile
+      }
+    }
+
+    // Game state
+    const gameState = {
+      pool: [],
+      playerTiles: [],
+      aiTiles: [],
+      tableTiles: [], // will become array of groups (arrays of tiles)
+      selectedTiles: new Set(),
+      tileIdCounter: 0,
+      currentPlayer: 'human', // 'human' or 'ai'
+      gameLogElement: null,
+      playerTilesElement: null,
+      tableAreaElement: null,
+      drawTileBtn: null,
+      playTilesBtn: null,
+      resetSelectionBtn: null,
+      aiTileCountElement: null,
+      turnIndicatorElement: null,
+    };
+
+    // Initialize the tile pool (2 sets of 1-13 in 4 colors)
+    function initTilePool() {
+      const pool = [];
+      let idCounter = 0;
+      for (let set = 0; set < 2; set++) {
+        for (const color of COLORS) {
+          for (const number of NUMBERS) {
+            pool.push(new Tile(color, number, idCounter++));
+          }
+        }
+      }
+      return pool;
+    }
+
+    // Shuffle array in place (Fisher-Yates)
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    // Render tiles in a container
+    function renderTiles(container, tiles, selectable = true) {
+      container.innerHTML = '';
+      tiles.forEach(tile => {
+        const tileEl = document.createElement('div');
+        tileEl.className = `tile ${tile.color} flex items-center justify-center text-2xl font-bold bg-white border border-gray-300 select-none`;
+        tileEl.textContent = tile.number;
+        tileEl.setAttribute('data-id', tile.id);
+        tileEl.setAttribute('role', 'button');
+        tileEl.setAttribute('tabindex', '0');
+        tileEl.setAttribute('aria-pressed', 'false');
+        if (selectable && gameState.currentPlayer === 'human') {
+          tileEl.addEventListener('click', () => toggleSelectTile(tile.id));
+          tileEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleSelectTile(tile.id);
+            }
+          });
+        }
+        if (gameState.selectedTiles.has(tile.id)) {
+          tileEl.classList.add('selected');
+          tileEl.setAttribute('aria-pressed', 'true');
+        }
+        container.appendChild(tileEl);
+      });
+    }
+
+    // Toggle tile selection
+    function toggleSelectTile(tileId) {
+      if (gameState.selectedTiles.has(tileId)) {
+        gameState.selectedTiles.delete(tileId);
+      } else {
+        gameState.selectedTiles.add(tileId);
+      }
+      updateButtons();
+      renderTiles(gameState.playerTilesElement, gameState.playerTiles);
+    }
+
+    // Update buttons state
+    function updateButtons() {
+      const hasSelection = gameState.selectedTiles.size > 0;
+      gameState.playTilesBtn.disabled = !hasSelection || gameState.currentPlayer !== 'human';
+      gameState.resetSelectionBtn.disabled = !hasSelection || gameState.currentPlayer !== 'human';
+      gameState.drawTileBtn.disabled = gameState.currentPlayer !== 'human';
+    }
+
+    // Draw a tile from the pool for a player
+    function drawTileForPlayer(player) {
+      if (gameState.pool.length === 0) {
+        logMessage('No more tiles in the pool.');
+        return null;
+      }
+      const tile = gameState.pool.pop();
+      if (player === 'human') {
+        gameState.playerTiles.push(tile);
+        logMessage(`You drew tile: ${tile.color} ${tile.number}`);
+      } else if (player === 'ai') {
+        gameState.aiTiles.push(tile);
+        logMessage(`AI drew a tile.`);
+      }
+      updateAiTileCount();
+      return tile;
+    }
+
+    // Play selected tiles to the table for human player
+    function playSelectedTiles() {
+      if (gameState.selectedTiles.size === 0 || gameState.currentPlayer !== 'human') {
+        return;
+      }
+      const selectedIds = Array.from(gameState.selectedTiles);
+      const selectedTiles = gameState.playerTiles.filter(t => selectedIds.includes(t.id));
+      if (gameState.selectedTableGroupIndex !== null) {
+        // Add tiles to existing group
+        const targetGroup = gameState.tableTiles[gameState.selectedTableGroupIndex];
+        const combinedGroup = targetGroup.concat(selectedTiles);
+        if (combinedGroup.length < 3) {
+          // Allow adding single tile if combined group is still valid
+          if (!validateSetsAndRuns(combinedGroup)) {
+            alert('Adding these tiles to the selected group is not valid according to Rummikub rules.');
+            return;
+          }
+        } else {
+          if (!validateSetsAndRuns(combinedGroup)) {
+            alert('Adding these tiles to the selected group is not valid according to Rummikub rules.');
+            return;
+          }
+        }
+        // Update the group with combined tiles
+        gameState.tableTiles[gameState.selectedTableGroupIndex] = combinedGroup;
+      } else {
+        if (!validateSetsAndRuns(selectedTiles)) {
+          alert('Selected tiles do not form valid sets or runs according to Rummikub rules.');
+          return;
+        }
+        // Add selected tiles as a new group on the table
+        gameState.tableTiles.push(selectedTiles);
+      }
+      // Remove played tiles from player tiles
+      selectedTiles.forEach(tile => {
+        const index = gameState.playerTiles.findIndex(t => t.id === tile.id);
+        if (index !== -1) {
+          gameState.playerTiles.splice(index, 1);
+        }
+      });
+      logMessage(`You played ${selectedTiles.length} tile(s) to the table.`);
+      gameState.selectedTiles.clear();
+      gameState.selectedTableGroupIndex = null;
+      renderTiles(gameState.playerTilesElement, gameState.playerTiles);
+      renderTableGroups();
+      updateButtons();
+      endTurn();
+    }
+
+    // Reset tile selection
+    function resetSelection() {
+      gameState.selectedTiles.clear();
+      renderTiles(gameState.playerTilesElement, gameState.playerTiles);
+      updateButtons();
+    }
+
+    // Validate sets and runs according to Rummikub rules
+    function validateSetsAndRuns(tiles) {
+      if (tiles.length < 3) return false;
+      // Check if all tiles have the same number but different colors (set)
+      const allSameNumber = tiles.every(t => t.number === tiles[0].number);
+      const uniqueColors = new Set(tiles.map(t => t.color));
+      if (allSameNumber && uniqueColors.size === tiles.length && tiles.length <= 4) {
+        return true;
+      }
+      // Check if tiles form a run: same color, consecutive numbers
+      const allSameColor = tiles.every(t => t.color === tiles[0].color);
+      if (allSameColor) {
+        const numbers = tiles.map(t => t.number).sort((a, b) => a - b);
+        for (let i = 1; i < numbers.length; i++) {
+          if (numbers[i] !== numbers[i - 1] + 1) {
+            return false;
+          }
+        }
+        return true;
+      }
+      return false;
+    }
+
+    // Log messages to game log
+    function logMessage(message) {
+      // Removed game log as per user request
+      // No operation
+    }
+
+    // Update AI tile count display
+    function updateAiTileCount() {
+      gameState.aiTileCountElement.textContent = gameState.aiTiles.length;
+    }
+
+    // End current player's turn and switch to the other player
+    function endTurn() {
+      if (gameState.currentPlayer === 'human') {
+        gameState.currentPlayer = 'ai';
+        gameState.turnIndicatorElement.textContent = "AI's turn";
+        updateButtons();
+        setTimeout(aiTurn, 1000);
+      } else {
+        gameState.currentPlayer = 'human';
+        gameState.turnIndicatorElement.textContent = "Your turn";
+        updateButtons();
+      }
+    }
+
+    // AI turn logic
+    function aiTurn() {
+      // AI tries to find valid sets or runs to play
+      const aiMove = findAiMove();
+      if (aiMove.length > 0) {
+        // Add AI move as a new group on the table
+        gameState.tableTiles.push(aiMove);
+        aiMove.forEach(tile => {
+          const index = gameState.aiTiles.findIndex(t => t.id === tile.id);
+          if (index !== -1) {
+            gameState.aiTiles.splice(index, 1);
+          }
+        });
+        logMessage(`AI played ${aiMove.length} tile(s) to the table.`);
+        renderTableGroups();
+        updateAiTileCount();
+        endTurn();
+      } else {
+        // AI draws a tile if no moves
+        const drawnTile = drawTileForPlayer('ai');
+        if (drawnTile) {
+          logMessage('AI drew a tile.');
+        }
+        endTurn();
+      }
+    }
+
+    // Find AI move: returns an array of tiles to play or empty array if no move
+    function findAiMove() {
+      // Simple AI: tries to find any valid set or run of length >= 3 in its tiles
+      const tiles = gameState.aiTiles;
+      // Check for sets (same number, different colors)
+      for (let number = 1; number <= 13; number++) {
+        const sameNumberTiles = tiles.filter(t => t.number === number);
+        if (sameNumberTiles.length >= 3) {
+          // Check unique colors
+          const uniqueColors = new Set(sameNumberTiles.map(t => t.color));
+          if (uniqueColors.size >= 3) {
+            // Return first 3 unique color tiles
+            const selectedTiles = [];
+            const colorsUsed = new Set();
+            for (const tile of sameNumberTiles) {
+              if (!colorsUsed.has(tile.color)) {
+                selectedTiles.push(tile);
+                colorsUsed.add(tile.color);
+                if (selectedTiles.length === 3) break;
+              }
+            }
+            if (validateSetsAndRuns(selectedTiles)) {
+              return selectedTiles;
+            }
+          }
+        }
+      }
+      // Check for runs (same color, consecutive numbers)
+      for (const color of COLORS) {
+        const colorTiles = tiles.filter(t => t.color === color).sort((a, b) => a.number - b.number);
+        for (let i = 0; i <= colorTiles.length - 3; i++) {
+          const runTiles = [colorTiles[i]];
+          for (let j = i + 1; j < colorTiles.length; j++) {
+            if (colorTiles[j].number === runTiles[runTiles.length - 1].number + 1) {
+              runTiles.push(colorTiles[j]);
+              if (runTiles.length >= 3 && validateSetsAndRuns(runTiles)) {
+                return runTiles;
+              }
+            } else if (colorTiles[j].number > runTiles[runTiles.length - 1].number + 1) {
+              break;
+            }
+          }
+        }
+      }
+      return [];
+    }
+
+    // Initialize game
+    function initGame() {
+      gameState.pool = initTilePool();
+      shuffle(gameState.pool);
+      gameState.playerTiles = [];
+      gameState.aiTiles = [];
+      gameState.tableTiles = [];
+      gameState.selectedTiles.clear();
+      gameState.tileIdCounter = 0;
+      gameState.currentPlayer = 'human';
+
+      // gameState.gameLogElement = document.getElementById('gameLog');
+      gameState.playerTilesElement = document.getElementById('playerTiles');
+      gameState.tableAreaElement = document.getElementById('tableArea');
+      gameState.drawTileBtn = document.getElementById('drawTileBtn');
+      gameState.playTilesBtn = document.getElementById('playTilesBtn');
+      gameState.resetSelectionBtn = document.getElementById('resetSelectionBtn');
+      gameState.aiTileCountElement = document.getElementById('aiTileCount');
+      gameState.turnIndicatorElement = document.getElementById('turnIndicator');
+
+      gameState.drawTileBtn.addEventListener('click', () => {
+        drawTileForPlayer('human');
+        renderTiles(gameState.playerTilesElement, gameState.playerTiles);
+        updateButtons();
++        endTurn();
+      });
+      gameState.playTilesBtn.addEventListener('click', playSelectedTiles);
+      gameState.resetSelectionBtn.addEventListener('click', resetSelection);
+
+      // Draw initial 14 tiles for player and AI
+      for (let i = 0; i < 14; i++) {
+        drawTileForPlayer('human');
+        drawTileForPlayer('ai');
+      }
+
+      renderTiles(gameState.playerTilesElement, gameState.playerTiles);
+      renderTiles(gameState.tableAreaElement, gameState.tableTiles, false);
+      updateAiTileCount();
+      updateButtons();
+
+      logMessage('Game started. Your turn.');
+    }
+
+    window.addEventListener('DOMContentLoaded', initGame);
+
+    // Render table groups (each group is a separate set/run)
+    function renderTableGroups() {
+      gameState.tableAreaElement.innerHTML = '';
+      gameState.tableTiles.forEach((group, index) => {
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'flex gap-2 mr-4 mb-2';
+        // Sort tiles by number ascending before rendering
+        const sortedGroup = group.slice().sort((a, b) => a.number - b.number);
+        sortedGroup.forEach(tile => {
+          const tileEl = document.createElement('div');
+          tileEl.className = `tile ${tile.color} flex items-center justify-center text-2xl font-bold bg-white border border-gray-300 select-none`;
+          tileEl.textContent = tile.number;
+          groupDiv.appendChild(tileEl);
+        });
+        gameState.tableAreaElement.appendChild(groupDiv);
+      });
+    }
+  </script>
+</body>
+</html>
