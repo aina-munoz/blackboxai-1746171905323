@@ -145,6 +145,7 @@
       resetSelectionBtn: null,
       aiTileCountElement: null,
       turnIndicatorElement: null,
+      selectedTableGroupIndex: null,
     };
 
     // Initialize the tile pool (2 sets of 1-13 in 4 colors)
@@ -236,12 +237,19 @@
 
     // Play selected tiles to the table for human player
     function playSelectedTiles() {
-      if (gameState.selectedTiles.size === 0 || gameState.currentPlayer !== 'human') {
+      console.log('playSelectedTiles called');
+      if (gameState.selectedTiles.size === 0) {
+        console.log('No tiles selected');
+        return;
+      }
+      if (gameState.currentPlayer !== 'human') {
+        console.log('Not human turn');
         return;
       }
       const selectedIds = Array.from(gameState.selectedTiles);
       const selectedTiles = gameState.playerTiles.filter(t => selectedIds.includes(t.id));
-      if (gameState.selectedTableGroupIndex !== null) {
+      console.log('Selected tiles:', selectedTiles);
+      if (gameState.selectedTableGroupIndex !== null && gameState.selectedTableGroupIndex >= 0 && gameState.selectedTableGroupIndex < gameState.tableTiles.length) {
         // Add tiles to existing group
         const targetGroup = gameState.tableTiles[gameState.selectedTableGroupIndex];
         const combinedGroup = targetGroup.concat(selectedTiles);
@@ -281,6 +289,24 @@
       renderTableGroups();
       updateButtons();
       endTurn();
+    }
+
+    // Update buttons state
+    function updateButtons() {
+      const hasSelection = gameState.selectedTiles.size > 0;
+      console.log('updateButtons called, hasSelection:', hasSelection, 'currentPlayer:', gameState.currentPlayer);
+      gameState.playTilesBtn.disabled = !hasSelection || gameState.currentPlayer !== 'human';
+      gameState.resetSelectionBtn.disabled = !hasSelection || gameState.currentPlayer !== 'human';
+      gameState.drawTileBtn.disabled = gameState.currentPlayer !== 'human';
+    }
+=======
+    // Update buttons state
+    function updateButtons() {
+      const hasSelection = gameState.selectedTiles.size > 0;
+      console.log('updateButtons called, hasSelection:', hasSelection, 'currentPlayer:', gameState.currentPlayer);
+      gameState.playTilesBtn.disabled = !hasSelection || gameState.currentPlayer !== 'human';
+      gameState.resetSelectionBtn.disabled = !hasSelection || gameState.currentPlayer !== 'human';
+      gameState.drawTileBtn.disabled = gameState.currentPlayer !== 'human';
     }
 
     // Reset tile selection
@@ -436,9 +462,12 @@
         drawTileForPlayer('human');
         renderTiles(gameState.playerTilesElement, gameState.playerTiles);
         updateButtons();
-+        endTurn();
+        endTurn();
       });
-      gameState.playTilesBtn.addEventListener('click', playSelectedTiles);
+      gameState.playTilesBtn.addEventListener('click', () => {
+        console.log('Play Selected button clicked');
+        playSelectedTiles();
+      });
       gameState.resetSelectionBtn.addEventListener('click', resetSelection);
 
       // Draw initial 14 tiles for player and AI
@@ -470,6 +499,23 @@
           tileEl.className = `tile ${tile.color} flex items-center justify-center text-2xl font-bold bg-white border border-gray-300 select-none`;
           tileEl.textContent = tile.number;
           groupDiv.appendChild(tileEl);
+        });
+        // Make group selectable for adding tiles
+        groupDiv.style.cursor = 'pointer';
+        if (gameState.selectedTableGroupIndex === index) {
+          groupDiv.style.outline = '3px solid #2563eb';
+          groupDiv.style.outlineOffset = '2px';
+        }
+        groupDiv.addEventListener('click', () => {
+          if (gameState.currentPlayer === 'human') {
+            if (gameState.selectedTableGroupIndex === index) {
+              gameState.selectedTableGroupIndex = null;
+            } else {
+              gameState.selectedTableGroupIndex = index;
+            }
+            renderTableGroups();
+            updateButtons();
+          }
         });
         gameState.tableAreaElement.appendChild(groupDiv);
       });
